@@ -1738,6 +1738,20 @@ local function compare(a, b)
     end
 end
 
+local function sortByName(a, b)
+    if a[1] < b[1] then
+        return true
+    end
+    return false
+end
+
+local function sortByPrice(a, b)
+    if a[2] < b[2] then
+        return true
+    end
+    return false
+end
+
 local labelColor = "9D8C70"
 local completeColor = "00FF00"
 local commonColor = "FFFFFF"
@@ -1938,20 +1952,20 @@ function RECIPE_ADD_CUSTOM_TOOLTIP_TEXT(invItem)
         
         for j = 1 , 5 do
             local item = GetClass("Item", cls["Item_" .. j .. "_1"]);
-            local recipeItem = GetClass("Item", cls["Item_1_1"]);
-            local obj = {}
-            obj.recipeClassID = (recipeItem and recipeItem.ClassID) or nil
-
             if item == "None" or item == nil or item.NotExist == 'YES' or item.ItemType == 'Unused' or item.GroupName == 'Unused' then
                 break;
             end
             
+            local recipeItem = GetClass("Item", cls["Item_1_1"]);
+            local obj = {}
+            obj.recipeClassID = recipeItem.ClassID
+            
             if item.ClassName == invItem.ClassName then
-                local needCount, haveCount = 1, 0;
+                local needCount, haveCount, itemCls = 1, 1, recipeItem.ClassID;
                 if IS_RECIPE_ITEM(invItem) ~= 0 and j == 1 then
-                    needCount, haveCount = 1, 1 
+                    needCount, haveCount, itemCls = 1, 1, recipeItem.ClassID; 
                 else
-                    needCount, haveCount = GET_RECIPE_MATERIAL_INFO(cls, j);
+                    needCount, haveCount, itemCls = GET_RECIPE_MATERIAL_INFO(cls, j);
                 end
                 foundMatch = true;
                 obj.resultItemObj = GetClass("Item", cls.TargetItem);
@@ -2355,12 +2369,265 @@ function CUSTOM_TOOLTIP_PROPS(tooltipFrame, mainFrameName, invItem, strArg, useS
     return primaryTextCtrl:GetHeight() + primaryTextCtrl:GetY();
 end
 
+function MARKET_FIRST_OPEN_HOOKED(frame)
+    local groupBox = GET_CHILD(frame, "categoryList", "ui::CGroupBox");
+    local tree = GET_CHILD(groupBox, "tree", 'ui::CTreeControl')
+    groupBox:SetUserValue("CTRLNAME", "None");
+    tree:Clear();
+
+    local clslist, cnt = GetClassList("ItemCategory");
+    
+    for i = -1 , cnt - 1 do
+        local group = nil;
+        local cls = nil;
+        local isDraw = false;
+        if -1 == i then
+            group = "ShowAll"
+            isDraw = true;
+        else
+            cls = GetClassByIndexFromList(clslist, i);
+            group = cls.ClassName;
+            if group == "Gem" or group == "Card" or cls.UseMarket == "YES" then
+                isDraw = true;
+            end
+        end
+
+        if true == isDraw then
+            local subCateList = {};
+            if nil ~= cls and cls.SubCategory ~= "None" then
+                subCateList = StringSplit(cls.SubCategory, "/");
+        end
+
+            local ctrlSet = tree:CreateControlSet("market_tree", "CTRLSET_" .. i, ui.LEFT, 0, 0, 0, 0, 0);
+            local part = ctrlSet:GetChild("part");
+            part:SetTextByKey("value", ClMsg(group));
+    
+            if 0 >= #subCateList then
+                local foldimg = ctrlSet:GetChild("foldimg");
+                foldimg:ShowWindow(0);
+                tree:Add(ctrlSet,  group);
+            else
+                tree:Add(ctrlSet, group);
+                local htreeitem = tree:FindByName(ctrlSet:GetName());
+                tree:SetFoldingScript(htreeitem, "KEYCONFIG_UPDATE_FOLDING");
+                    for j = 1 , #subCateList do
+                        local cate = subCateList[j]
+                    if cate ~= 'None' then
+                            tree:Add(htreeitem, "{@st66}"..ClMsg(cate), group.."#"..cate, "{#000000}");
+                    end
+                end
+            end
+        end
+    end
+    
+    
+    frame:SetUserValue("Group", "ShowAll");
+    frame:SetUserValue("ClassType", "ShowAll");
+
+    GBOX_AUTO_ALIGN(tree, 0, 0, 300, true, true);
+end
+
+function DUMP_JOURNAL_RECIPE_ITEMS(sortPrice)
+    local compiledList = {}
+    
+    local itemList, cnt = GetClassList("Item");        
+    local wikiList = GetClassList("Wiki");
+    for i = 1, cnt -1 do
+        local wiki = GetClassByIndexFromList(wikiList, i)
+        if wiki ~= nil then
+            local wikiCls = GetClassByTypeFromList(wikiList, wiki.ClassID)
+            if wikiCls ~= nil then
+                local itemCls = GetClassByNameFromList(itemList, wikiCls.ClassName);
+                if itemCls ~= nil then
+                    if wikiCls.ClassName == itemCls.ClassName then
+                        local item = GetClassByType("Item", itemCls.ClassID)
+                        if item ~= nil or item ~= 'None' then
+                            if geItemTable.IsExchangeable(itemCls.ClassID) == 1 then
+                                if item.NotExist ~= nil and item.NotExist == 'NO' then
+                                    if item.ItemType ~= nil and item.ItemType ~= 'Quest' then
+                                        if item.ItemType ~= 'Unused' or item.ItemType ~= '' then
+                                            if item.Journal ~= nil and item.Journal == 'TRUE' then
+                                                local name = dictionary.ReplaceDicIDInCompStr(item.Name)
+                                                if name ~= "noname" then
+                                                    if item.ItemType ~= 'Recipe' then
+                                                        local wiki = GetWiki(wikiCls.ClassID)
+                                                        local totalCount = GetWikiIntProp(wiki, "Total");
+                                                        
+                                                        if totalCount == nil then
+                                                            totalCount = 0
+                                                        end
+                                                        if totalCount == 0 then
+                                                            table.insert(compiledList, {name, item.ClassID});
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    local uncraftedList = {}
+    
+    local clsList, cnt = GetClassList("Recipe");
+    for i = 0 , cnt - 1 do
+        local recipeCls = GetClassByIndexFromList(clsList, i);
+        local item = GetClass("Item", recipeCls.TargetItem);
+        if item ~= nil and item.ItemType ~= "Unused" then
+            for j = 1 , 5 do
+            local item = GetClass("Item", recipeCls["Item_" .. j .. "_1"]);
+                if item == "None" or item == nil or item.NotExist == 'YES' or geItemTable.IsExchangeable(item.ClassID) == 0 then
+                    break;
+                end
+                if geItemTable.IsExchangeable(item.ClassID) == 1 then
+                    local isRecipe = false;
+                    local needCount, haveCount = 1, 0;
+                    if IS_RECIPE_ITEM(item) ~= 0 then
+                        needCount, haveCount = 1, 1;
+                        isRecipe = true; 
+                    else
+                        needCount, haveCount = GET_RECIPE_MATERIAL_INFO(recipeCls, j);
+                    end
+                    local name = dictionary.ReplaceDicIDInCompStr(item.Name)
+                    local containsMaterial = false
+                    local recipeWiki = GetWiki(recipeCls.ClassID)
+                    local isRegistered = false;
+                    local isCrafted = false;
+                    
+                    if isRecipe then
+                        if recipeWiki ~= nil then
+                            local teachPoint = GetWikiIntProp(recipeWiki, "TeachPoint");
+                            local makeCount = GetWikiIntProp(recipeWiki, "MakeCount");
+                            if teachPoint >= 0 then
+                                isRegistered = true;
+                            end
+                            if makeCount > 0 then
+                                isCrafted = true;
+                            end
+                            
+                            if isRegistered == false or isCrafted == false then
+                                local name = dictionary.ReplaceDicIDInCompStr(item.Name)
+                                table.insert(compiledList, {name, item.ClassID})
+                            end
+                            
+                            if isCrafted == false then
+                                local name = dictionary.ReplaceDicIDInCompStr(item.Name)
+                                local className = item.ClassName
+                                if contains(uncraftedList, className) == false then
+                                    table.insert(uncraftedList, {className, item.ClassID})
+                                end
+                            end
+                        else
+                            local name = dictionary.ReplaceDicIDInCompStr(item.Name)
+                            table.insert(compiledList, {name, item.ClassID})
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+--  local data = marktioneer.getMinimumData(itemID);
+--  if (data) then return marktioneer.getTextData(data); end
+    
+    table.sort(compiledList, sortByName)
+    
+    local compiledListWithPrice = {}
+    
+    for i = 1, #compiledList do
+        local name = compiledList[i][1];
+        local classID = compiledList[i][2];
+        
+        if marktioneer ~= nil then
+            local data = marktioneer.getMinimumData(classID);
+            if (data) then 
+                table.insert(compiledListWithPrice, {name, data.price})
+            --else
+                --table.insert(compiledListWithPrice, {name, 0})
+            end
+        end
+    end
+    
+    --if sortPrice ~= nil and sortPrice == true then
+        table.sort(compiledListWithPrice, sortByPrice)
+    --end
+    
+    local finalCompiledList = {}
+    
+    for j = 1, #compiledListWithPrice do
+        table.insert(finalCompiledList, compiledListWithPrice[j][1] .. " " .. compiledListWithPrice[j][2])   
+    end
+    
+    local allList = table.concat(finalCompiledList, "\n")
+    
+    
+    local uncraftTextTable = {}
+    local clsList, cnt = GetClassList("Recipe");
+    for a = 1, #uncraftedList do
+        local text = ""
+        local uncraftedClsName = uncraftedList[a][1]
+        local clsList, cnt = GetClassList("Recipe");
+        for b = 0, cnt -1 do
+            local uncraftedCls = GetClassByNameFromList(clsList, uncraftedClsName);
+            if uncraftedClsName == uncraftedCls.ClassName then
+                for j = 1 , 5 do
+                    local item = GetClass("Item", uncraftedCls["Item_" .. j .. "_1"]);
+                    if item == "None" or item == nil or item.NotExist == 'YES' or geItemTable.IsExchangeable(item.ClassID) == 0 then
+                        break;
+                    end
+                    local isRecipe = false; 
+                    local needCount, haveCount = 1, 0;
+                    if IS_RECIPE_ITEM(item) ~= 0 then
+                        isRecipe = true;
+                        needCount, haveCount = 1, 1 
+                    else
+                        needCount, haveCount = GET_RECIPE_MATERIAL_INFO(uncraftedCls, j);
+                    end
+                    
+                    if item.ItemType == 'Recipe' then
+                        text = text .. dictionary.ReplaceDicIDInCompStr(item.Name) .. " " .. haveCount .. "/" .. needCount .. "\n"
+                    else
+                        text = text .. "\t" .. dictionary.ReplaceDicIDInCompStr(item.Name) .. " " .. haveCount .. "/" .. needCount .. "\n" 
+                    end
+                    
+                end
+                table.insert(uncraftTextTable, text);
+                break;
+            end
+        end
+    end
+    
+    local uncraftList = table.concat(uncraftTextTable, "\n")
+    
+    
+    local file, error = io.open("../addons/tooltiphelper/missingJournalRecipeAndItems.txt", "w")
+    if error then
+        return;
+    end
+    
+    file:write(allList)
+    file:write("\n")
+    file:write(uncraftList)
+    
+    file:flush();
+    file:close();
+end
+
 function TOOLTIPHELPER_INIT()
     if not TooltipHelper.isLoaded then
         acutil.setupHook(ITEM_TOOLTIP_EQUIP_HOOKED, "ITEM_TOOLTIP_EQUIP");
         acutil.setupHook(ITEM_TOOLTIP_ETC_HOOKED, "ITEM_TOOLTIP_ETC");
         acutil.setupHook(ITEM_TOOLTIP_BOSSCARD_HOOKED, "ITEM_TOOLTIP_BOSSCARD");
         acutil.setupHook(ITEM_TOOLTIP_GEM_HOOKED, "ITEM_TOOLTIP_GEM");
+        acutil.setupHook(MARKET_FIRST_OPEN_HOOKED, "MARKET_FIRST_OPEN");
+        
+        acutil.slashCommand("/dumpz", DUMP_JOURNAL_RECIPE_ITEMS)
         
         TooltipHelper.isLoaded = true
         
