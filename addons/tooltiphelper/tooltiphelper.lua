@@ -2231,6 +2231,7 @@ function RENDER_REPAIR_RECOMMENDATION(tooltipFrame, invItem)
             if invItem.Dur < invItem.MaxDur then
                 local repairRecommendation = toIMCTemplate("NPC ", npcColor)
                 if squireResult * tonumber(TooltipHelper.config.squireRepairPerKit) < GET_REPAIR_PRICE(invItem, 0) then
+                    repairRecommendation = toIMCTemplate("Squire ", squireColor) .. toIMCTemplate("(" .. TooltipHelper.config.squireRepairPerKit .. ")", squireColor)
                 end
                 repairRecommendationLabel = toIMCTemplate("Repair at: ", labelColor) .. repairRecommendation
             end
