@@ -1940,8 +1940,8 @@ function RECIPE_ADD_CUSTOM_TOOLTIP_TEXT(invItem)
             local item = GetClass("Item", cls["Item_" .. j .. "_1"]);
             local recipeItem = GetClass("Item", cls["Item_1_1"]);
             local obj = {}
-            obj.recipeClassID = recipeItem.ClassID
-            
+            obj.recipeClassID = (recipeItem and recipeItem.ClassID) or nil
+
             if item == "None" or item == nil or item.NotExist == 'YES' or item.ItemType == 'Unused' or item.GroupName == 'Unused' then
                 break;
             end
@@ -2029,7 +2029,7 @@ function RECIPE_ADD_CUSTOM_TOOLTIP_TEXT(invItem)
             
             text = text .. " " .. materialCountText
             
-            if marktioneer ~= nil then
+            if marktioneer ~= nil and recipeClsID ~= nil then
                 local recipeData = marktioneer.getMinimumData(recipeClsID);
                 local newLine = "{nl}    ";
                 if (recipeData) then 
@@ -2193,7 +2193,7 @@ function RENDER_MAGNUM_OPUS_SECTION(invItem)
 end
 
 function RENDER_CUBE_REROLL_PRICE(tooltipFrame, buffer, invItem)
-    if invItem.GroupName == "Drug" then
+    if invItem.GroupName == "Cube" then
         local item = GetObjectByGuid(tooltipFrame:GetTooltipIESID());
         local itemName = dictionary.ReplaceDicIDInCompStr(item.Name)
         if string.find(itemName, 'Cube') then
@@ -2231,7 +2231,6 @@ function RENDER_REPAIR_RECOMMENDATION(tooltipFrame, invItem)
             if invItem.Dur < invItem.MaxDur then
                 local repairRecommendation = toIMCTemplate("NPC ", npcColor)
                 if squireResult * tonumber(TooltipHelper.config.squireRepairPerKit) < GET_REPAIR_PRICE(invItem, 0) then
-                    repairRecommendation = toIMCTemplate("Squire ", squireColor)
                 end
                 repairRecommendationLabel = toIMCTemplate("Repair at: ", labelColor) .. repairRecommendation
             end
