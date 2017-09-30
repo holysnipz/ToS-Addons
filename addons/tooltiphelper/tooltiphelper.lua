@@ -1776,8 +1776,8 @@ function ITEM_TOOLTIP_BOSSCARD_HOOKED(tooltipFrame, invItem, strArg)
     return CUSTOM_TOOLTIP_PROPS(tooltipFrame, mainFrameName, invItem, strArg);
 end
 
-function ITEM_TOOLTIP_EQUIP_HOOKED(tooltipFrame, invItem, strArg, useSubFrame)
-    _G["ITEM_TOOLTIP_EQUIP_OLD"](tooltipFrame, invItem, strArg, useSubFrame);
+function ITEM_TOOLTIP_EQUIP_HOOKED(tooltipFrame, invItem, strArg, useSubFrame, isForgery)
+    _G["ITEM_TOOLTIP_EQUIP_OLD"](tooltipFrame, invItem, strArg, useSubFrame, isForgery);
     
     local mainFrameName = 'equip_main'
     
@@ -1835,39 +1835,20 @@ local function manuallyCount(cls, invItem)
 end
 
 function JOURNAL_STATS_CUSTOM_TOOLTIP_TEXT(invItem)
+--Somehow, need to re-open inventory ui after got item to update those points
+--Manually trigger `UPDATE_ADVENTURE_BOOK_SECTION_INFO` (and it's inside function) doesn't work
     local text = ""
-    local type = "Item"
-    if invItem.ItemType == "Recipe" then type = "Recipe" end
-    
-    local clsList = GetClassList(type);        
-    local wikiList = GetClassList("Wiki");
-    local list = GetWikiListByCategory(type);
-    if list ~= nil then
-        for i = 1 , #list do
-            local wiki = list[i];
-            local wikiType = GetWikiType(wiki);
-            local cls = GetClassByTypeFromList(wikiList, wikiType);
-            local itemCls = GetClassByNameFromList(clsList, cls.ClassName);
-            if itemCls.ClassName == invItem.ClassName then
-                local cls = GetClass("Item", itemCls.ClassName);
-                local score = GET_ITEM_WIKI_PTS(cls, wiki);
-                local totalCount = GetWikiIntProp(wiki, "Total");
-                local maxPts = GET_ITEM_MAX_WIKI_PTS(cls, wiki);
-        
-                if score ~= nil and maxPts ~= nil then
-                    text = "Journal Points Acquired: (" .. math.floor(score) .. "/" .. maxPts .. "){nl}"
-                    if score == maxPts then 
-                        text = "Journal Points Acquired: " .. maxPts .. "{nl}"                          
-                    end
-                end
-                
-                --Journal doesn't log recipe count
-                if totalCount ~= nil and type ~= "Recipe" then
-                    text = text .. "Total Obtained: " .. totalCount .. "{nl}"
-                end
-                break;
-            end
-        end
+    local pc = GetMyPCObject()
+
+    if invItem.Journal then
+        local itemObtainCount = GetItemObtainCount(pc, invItem.ClassID);
+        local curScore, maxScore, section = _GET_ADVENTURE_BOOK_POINT_ITEM( (invItem.ItemType == "Equip"), itemObtainCount);
+        local curLv, curPoint, maxPoint = GET_ADVENTURE_BOOK_ITEM_OBTAIN_COUNT_INFO((invItem.ItemType == "Equip"), itemObtainCount);
+        text = "Journal Points Acquired: (" .. math.floor(curScore) .. "/" .. maxScore .. "){nl}"
+	if curScore == maxPoint then 
+		text = "Journal Points Acquired: " .. maxScore .. "{nl}"			        		
+        end  
+        text = text .. "Total Obtained: " .. itemObtainCount .. "{nl}"
     end
     return toIMCTemplate(text, labelColor)
 end
@@ -1983,16 +1964,14 @@ function RECIPE_ADD_CUSTOM_TOOLTIP_TEXT(invItem)
                     end
                     
                     obj.resultItemName = dictionary.ReplaceDicIDInCompStr(resultItem.Name)
-                    local recipeWiki = GetWiki(cls.ClassID);
-                    if recipeWiki ~= nil then
-                        local teachPoint = GetWikiIntProp(recipeWiki, "TeachPoint");
-                        local makeCount = GetWikiIntProp(recipeWiki, "MakeCount");
-                        if teachPoint >= 0 then
+                    
+                    --TODO: find function to check if recipe was actually registered, not just exist in inventory
+                    if session.GetInvItemByName(cls.ClassName) ~= nil then
                             obj.isRegistered = true;
-                        end
-                        if makeCount > 0 then
+                    end
+                    local craftCount = GetCraftCount(pc, resultItem.ClassID);
+                    if craftCount > 0 then
                             obj.isCrafted = true;
-                        end
                     end
                     
                     table.insert(unSortedTable, obj);
